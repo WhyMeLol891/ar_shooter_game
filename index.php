@@ -3,12 +3,20 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/api/site_lib.php';
+require_once __DIR__ . '/api/models_lib.php';
 
 $targetPath = target_image_path();
 $compiledPath = target_compiled_path();
 $targetExists = is_file($targetPath);
 $compiledExists = is_file($compiledPath);
 $gameUrl = compute_public_base_url() . '/game.php';
+$enemyCandidates = enemy_candidates();
+$modelConfig = load_model_config();
+$configuredEnemy = (string) ($modelConfig['enemy'] ?? '');
+$enemyPreview = in_array($configuredEnemy, $enemyCandidates, true)
+    ? $configuredEnemy
+    : ($enemyCandidates[0] ?? '');
+$enemyPreviewUrl = $enemyPreview === '' ? '' : model_asset_url($enemyPreview);
 $statusText = $compiledExists ? 'Compiled · mind v1.0' : 'Not compiled · upload then compile';
 $targetImageUrl = target_image_url();
 ?>
@@ -62,6 +70,7 @@ $targetImageUrl = target_image_url();
                 <div class="qr-box">
                     <div id="game-qr"></div>
                 </div>
+                <p class="qr-help">Scan this code with your phone to open the AR game.</p>
                 <div class="url-label">Game URL</div>
                 <div id="game-url" class="game-url" aria-live="polite"><?= htmlspecialchars($gameUrl, ENT_QUOTES, 'UTF-8') ?></div>
                 <div class="status-pill <?= $compiledExists ? 'success' : 'warning' ?>"><?= htmlspecialchars($statusText, ENT_QUOTES, 'UTF-8') ?></div>
@@ -110,9 +119,29 @@ $targetImageUrl = target_image_url();
                 <?php endif; ?>
             </div>
         </section>
+
+        <?php if ($enemyPreviewUrl !== ''): ?>
+            <section class="enemy-preview-panel panel shell">
+                <div class="section-header">
+                    <h2>Enemy Preview</h2>
+                    <span class="status-pill success">In game</span>
+                </div>
+                <model-viewer
+                    class="enemy-preview"
+                    src="<?= htmlspecialchars($enemyPreviewUrl, ENT_QUOTES, 'UTF-8') ?>"
+                    alt="3D preview of the enemy that appears in the game"
+                    camera-controls
+                    auto-rotate
+                    shadow-intensity="1"
+                    exposure="1.1"
+                    interaction-prompt="none">
+                </model-viewer>
+            </section>
+        <?php endif; ?>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.5.4/qrcode.min.js"></script>
+    <script type="module" src="https://unpkg.com/@google/model-viewer@4.0.0/dist/model-viewer.min.js"></script>
     <script type="module" src="assets/js/main.js"></script>
     <script>
         window.AR_GAME_URL = <?= json_encode($gameUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;

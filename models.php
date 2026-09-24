@@ -69,12 +69,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$enemyOptions = ['random' => 'Random'];
+$enemyOptions = ['random' => 'Random', 'all' => 'All available'];
 foreach ($enemyCandidates as $enemy) {
     $enemyOptions[$enemy] = $enemy;
 }
 
-$weaponOptions = ['random' => 'Random'];
+$weaponOptions = ['random' => 'Random', 'all' => 'All available'];
 foreach ($weaponCandidates as $weapon) {
     $weaponOptions[$weapon] = $weapon;
 }

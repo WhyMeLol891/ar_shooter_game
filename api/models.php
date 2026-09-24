@@ -11,13 +11,18 @@ header('Pragma: no-cache');
 $config = load_model_config();
 $enemyCandidates = enemy_candidates();
 $weaponCandidates = weapon_candidates();
+$allModelCandidates = all_model_candidates();
 
-$enemyRandom = strtolower((string) ($config['enemy'] ?? 'random')) === 'random';
-$weaponRandom = strtolower((string) ($config['weapon'] ?? 'random')) === 'random';
+$enemyMode = strtolower((string) ($config['enemy'] ?? 'random'));
+$weaponMode = strtolower((string) ($config['weapon'] ?? 'random'));
+$enemyRandom = $enemyMode === 'random' || $enemyMode === 'all';
+$weaponRandom = $weaponMode === 'random' || $weaponMode === 'all';
 
 $enemySelection = $enemyRandom
     ? ($enemyCandidates === [] ? '' : $enemyCandidates[array_rand($enemyCandidates)])
-    : (string) ($config['enemy'] ?? '');
+    : (in_array((string) ($config['enemy'] ?? ''), $enemyCandidates, true)
+        ? (string) ($config['enemy'] ?? '')
+        : ($enemyCandidates[0] ?? ''));
 $configuredWeapon = (string) ($config['weapon'] ?? '');
 $weaponSelection = $weaponRandom
     ? ($weaponCandidates === [] ? '' : $weaponCandidates[array_rand($weaponCandidates)])
@@ -29,10 +34,11 @@ $payload = [
     'ok' => true,
     'config' => [
         'enemy' => $config['enemy'] ?? 'random',
-        'weapon' => $config['weapon'] ?? 'fps-akm.glb',
+        'weapon' => $config['weapon'] ?? 'random',
     ],
     'enemyRandom' => $enemyRandom,
     'weaponRandom' => $weaponRandom,
+    'allModels' => $allModelCandidates,
     'enemyCandidates' => $enemyCandidates,
     'weaponCandidates' => $weaponCandidates,
     'enemyUrl' => $enemySelection === '' ? '' : model_asset_url($enemySelection),

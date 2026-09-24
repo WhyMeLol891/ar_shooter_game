@@ -10,8 +10,18 @@ export class WeaponSystem {
         this.onFire = onFire;
         this.onReload = onReload;
         this.group = new THREE.Group();
-        this.group.position.set(0, -0.6, -1.1);
-        this.camera.add(this.group);
+        this.group.position.set(0, -0.25, -1.25);
+        this.group.renderOrder = 1000;
+        this.armRig = null;
+        this.weaponMount = null;
+        this.overlayCamera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 100);
+        this.overlayScene.add(this.overlayCamera);
+        this.overlayScene.add(new THREE.AmbientLight(0xffffff, 2.4));
+        const weaponLight = new THREE.DirectionalLight(0xffffff, 2.8);
+        weaponLight.position.set(1, 2, 2);
+        this.overlayScene.add(weaponLight);
+        this.createArmRig();
+        this.overlayCamera.add(this.group);
         this.magazineSize = 30;
         this.ammo = this.magazineSize;
         this.maxAmmo = this.magazineSize;
@@ -27,6 +37,34 @@ export class WeaponSystem {
         this.loadModel();
     }
 
+    createArmRig() {
+        const armRig = new THREE.Group();
+        const skinMaterial = new THREE.MeshStandardMaterial({ color: 0xf3d3bd, roughness: 0.8 });
+        const sleeveMaterial = new THREE.MeshStandardMaterial({ color: 0x4a5b72, roughness: 0.7 });
+
+        const upperArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.22, 6, 12), sleeveMaterial);
+        upperArm.position.set(0.18, -0.06, -0.28);
+        upperArm.rotation.z = -0.8;
+        upperArm.rotation.x = 0.35;
+
+        const lowerArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.04, 0.22, 6, 12), skinMaterial);
+        lowerArm.position.set(0.31, -0.18, -0.18);
+        lowerArm.rotation.z = -0.7;
+        lowerArm.rotation.x = 0.28;
+
+        const hand = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.07, 0.12), skinMaterial);
+        hand.position.set(0.41, -0.28, -0.08);
+        hand.rotation.z = -0.2;
+
+        this.weaponMount = new THREE.Group();
+        this.weaponMount.position.set(0.44, -0.22, -0.08);
+        this.weaponMount.rotation.set(0.18, 0.1, 0.18);
+
+        armRig.add(upperArm, lowerArm, hand, this.weaponMount);
+        this.armRig = armRig;
+        this.group.add(armRig);
+    }
+
     async loadModel() {
         if (!this.modelUrl) {
             this.createFallbackModel();
@@ -40,9 +78,15 @@ export class WeaponSystem {
             this.model.traverse((child) => {
                 if (child.isMesh) {
                     child.castShadow = true;
+                    child.frustumCulled = false;
+                    child.renderOrder = 1000;
                 }
             });
-            this.group.add(this.model);
+            if (this.weaponMount) {
+                this.weaponMount.add(this.model);
+            } else {
+                this.group.add(this.model);
+            }
             this.fitToView();
             this.setupAnimations(gltf.animations || []);
             this.loaded = true;
@@ -64,7 +108,11 @@ export class WeaponSystem {
         barrel.position.set(0, 0.02, 0.48);
         grip.position.set(0, -0.19, 0.12);
         fallback.add(receiver, barrel, grip);
-        this.group.add(fallback);
+        if (this.weaponMount) {
+            this.weaponMount.add(fallback);
+        } else {
+            this.group.add(fallback);
+        }
         this.model = fallback;
         this.loaded = true;
     }
@@ -78,7 +126,13 @@ export class WeaponSystem {
         const scale = 0.15 / maxDimension;
         this.model.scale.setScalar(scale);
         this.model.rotation.set(0.2, Math.PI, 0.05);
-        this.model.position.set(0.2, -0.2, 0.5);
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+        this.model.position.set(
+            0.18 - center.x * scale,
+            -0.14 - center.y * scale,
+            -center.z * scale,
+        );
     }
 
     setupAnimations(animations) {
@@ -97,6 +151,10 @@ export class WeaponSystem {
     update(delta) {
         if (this.mixer) this.mixer.update(delta);
         if (this.fireTimer > 0) this.fireTimer -= delta;
+    }
+
+    render(renderer) {
+        renderer.render(this.overlayScene, this.overlayCamera);
     }
 
     triggerFire() {

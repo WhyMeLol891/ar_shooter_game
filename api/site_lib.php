@@ -41,14 +41,60 @@ function default_site_config(): array
 {
     return [
         'publicBaseUrl' => '',
+        'updatedAt' => '',
     ];
+}
+
+function site_config_path(): string
+{
+    return app_root() . '/assets/config/site.json';
 }
 
 function site_config(): array
 {
-    $path = app_root() . '/assets/config/site.json';
-    $cfg = load_json_file($path);
+    $cfg = load_json_file(site_config_path());
     return array_merge(default_site_config(), $cfg);
+}
+
+function save_site_config(array $config): bool
+{
+    $config['updatedAt'] = gmdate('c');
+    return save_json_file(site_config_path(), $config);
+}
+
+function get_lan_ip(): string
+{
+    // Try network interfaces first (PHP 7.3+)
+    if (function_exists('net_get_interfaces')) {
+        $interfaces = @net_get_interfaces();
+        if (is_array($interfaces)) {
+            foreach ($interfaces as $interface) {
+                if (empty($interface['up']) || empty($interface['unicast'])) {
+                    continue;
+                }
+                foreach ($interface['unicast'] as $entry) {
+                    $address = $entry['address'] ?? '';
+                    // Check for standard private IPv4 ranges: 192.168.x.x, 10.x.x.x, 172.16-31.x.x
+                    if (preg_match('/^(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})$/', $address)) {
+                        return $address;
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback using hostname
+    $hostname = @gethostname();
+    if ($hostname) {
+        $ip = @gethostbyname($hostname);
+        if ($ip && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            if ($ip !== '127.0.0.1' && !str_starts_with($ip, '169.254.')) {
+                return $ip;
+            }
+        }
+    }
+
+    return 'localhost';
 }
 
 function compute_public_base_url(): string
@@ -58,14 +104,44 @@ function compute_public_base_url(): string
         return rtrim((string) $config['publicBaseUrl'], '/');
     }
 
-    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    $host = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost';
+    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
+        || (isset($_SERVER['SERVER_PORT']) && (int) $_SERVER['SERVER_PORT'] === 443);
+    $scheme = $isHttps ? 'https' : 'http';
 
-    if (empty($host) || $host === 'localhost' || $host === '127.0.0.1' || $host === '[::1]') {
-        $host = 'localhost';
+    $hostHeader = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost';
+    $port = '';
+    if (str_contains($hostHeader, ':')) {
+        [$hostOnly, $portPart] = explode(':', $hostHeader, 2);
+        $host = $hostOnly;
+        if (($scheme === 'http' && $portPart !== '80') || ($scheme === 'https' && $portPart !== '443')) {
+            $port = ':' . $portPart;
+        }
+    } else {
+        $host = $hostHeader;
+        $serverPort = (string) ($_SERVER['SERVER_PORT'] ?? '80');
+        if (($scheme === 'http' && $serverPort !== '80') || ($scheme === 'https' && $serverPort !== '443')) {
+            $port = ':' . $serverPort;
+        }
     }
 
-    return $scheme . '://' . $host . dirname($_SERVER['SCRIPT_NAME'] ?? '/');
+    // If accessed as localhost or loopback, auto-resolve to LAN IP so phones can connect
+    if (empty($host) || $host === 'localhost' || $host === '127.0.0.1' || $host === '[::1]') {
+        $lanIp = get_lan_ip();
+        if ($lanIp !== 'localhost') {
+            $host = $lanIp;
+        }
+    }
+
+    $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '/');
+    $scriptDir = str_replace('\\', '/', $scriptDir);
+    if ($scriptDir === '/' || $scriptDir === '.') {
+        $scriptDir = '';
+    } else {
+        $scriptDir = '/' . trim($scriptDir, '/');
+    }
+
+    return $scheme . '://' . $host . $port . $scriptDir;
 }
 
 function target_image_path(): string
@@ -83,45 +159,6 @@ function target_image_path(): string
         }
     }
 
-    $rootFiles = scandir(app_root());
-    if (is_array($rootFiles)) {
-        foreach ($rootFiles as $file) {
-            if ($file === '.' || $file === '..') {
-                continue;
-            }
-
-            $lower = strtolower($file);
-            if (!preg_match('/\.(jpe?g|png|webp|avif)$/i', $file)) {
-                continue;
-            }
-
-            $source = app_root() . '/' . $file;
-            $destination = app_root() . '/assets/targets/picture.jpg';
-            $image = false;
-
-            if (preg_match('/\.avif$/i', $file) && function_exists('imagecreatefromavif')) {
-                $image = imagecreatefromavif($source);
-            } elseif (preg_match('/\.png$/i', $file)) {
-                $image = imagecreatefrompng($source);
-            } elseif (preg_match('/\.webp$/i', $file)) {
-                $image = imagecreatefromwebp($source);
-            } elseif (preg_match('/\.jpe?g$/i', $file)) {
-                $image = imagecreatefromjpeg($source);
-            }
-
-            if ($image !== false) {
-                ensure_directory(app_root() . '/assets/targets');
-                imagejpeg($image, $destination, 92);
-                imagedestroy($image);
-                return $destination;
-            }
-
-            if (copy($source, $destination)) {
-                return $destination;
-            }
-        }
-    }
-
     return app_root() . '/assets/targets/picture.jpg';
 }
 
@@ -136,23 +173,19 @@ function target_image_url(): string
 
 function target_compiled_path(): string
 {
-    $candidates = [
-        app_root() . '/assets/targets/target.mind',
-        app_root() . '/assets/targets/targets.mind',
-    ];
-
-    foreach ($candidates as $candidate) {
-        if (is_file($candidate)) {
-            return $candidate;
-        }
-    }
-
     return app_root() . '/assets/targets/targets.mind';
 }
 
 function target_compiled_exists(): bool
 {
-    return is_file(target_compiled_path());
+    return is_file(target_compiled_path()) && filesize(target_compiled_path()) > 1000;
+}
+
+function target_compiled_url(): string
+{
+    $path = target_compiled_path();
+    $version = is_file($path) ? '?v=' . filemtime($path) : '?v=1';
+    return 'assets/targets/targets.mind' . $version;
 }
 
 function sanitize_filename(string $filename): string
@@ -171,3 +204,4 @@ function ensure_directory(string $directory): bool
 
     return mkdir($directory, 0775, true) || is_dir($directory);
 }
+

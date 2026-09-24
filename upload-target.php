@@ -39,43 +39,56 @@ if ($raw === false || strlen($raw) < 12) {
     exit;
 }
 
-$allowedTypes = [
+$allowedMimeTypes = [
     'image/jpeg' => 'jpg',
     'image/png' => 'png',
     'image/webp' => 'webp',
 ];
+
 $finfo = @finfo_open(FILEINFO_MIME_TYPE);
 $mimeType = $finfo ? @finfo_file($finfo, $file['tmp_name']) : null;
-if ($mimeType === false || !isset($allowedTypes[$mimeType])) {
-    header('Location: index.php?error=Unsupported%20image%20type');
+if ($finfo) {
+    @finfo_close($finfo);
+}
+
+if ($mimeType === false || !isset($allowedMimeTypes[$mimeType])) {
+    header('Location: index.php?error=Unsupported%20image%20type.%20Please%20upload%20JPG%2C%20PNG%2C%20or%20WEBP.');
     exit;
 }
 
-$extension = $allowedTypes[$mimeType];
-$destination = $targetDir . DIRECTORY_SEPARATOR . 'picture.' . $extension;
-if (!@move_uploaded_file($file['tmp_name'], $destination)) {
-    header('Location: index.php?error=Failed%20to%20save%20the%20uploaded%20image');
+$imageInfo = @getimagesize($file['tmp_name']);
+if ($imageInfo === false || empty($imageInfo[0]) || empty($imageInfo[1])) {
+    header('Location: index.php?error=Invalid%20or%20corrupt%20image%20file.');
     exit;
 }
 
-if ($extension !== 'jpg') {
-    $tmpImage = imagecreatefromstring($raw);
-    if ($tmpImage !== false) {
-        $converted = imagecreatetruecolor(imagesx($tmpImage), imagesy($tmpImage));
-        $white = imagecolorallocate($converted, 255, 255, 255);
-        imagefill($converted, 0, 0, $white);
-        imagecopy($converted, $tmpImage, 0, 0, 0, 0, imagesx($tmpImage), imagesy($tmpImage));
-        imagejpeg($converted, $targetDir . DIRECTORY_SEPARATOR . 'picture.jpg', 92);
-        imagedestroy($tmpImage);
-        imagedestroy($converted);
+$targetJpg = $targetDir . DIRECTORY_SEPARATOR . 'picture.jpg';
+
+// Convert or save directly as picture.jpg
+if (function_exists('imagecreatefromstring')) {
+    $srcImg = @imagecreatefromstring($raw);
+    if ($srcImg !== false) {
+        $width = imagesx($srcImg);
+        $height = imagesy($srcImg);
+        $trueColor = imagecreatetruecolor($width, $height);
+        $white = imagecolorallocate($trueColor, 255, 255, 255);
+        imagefill($trueColor, 0, 0, $white);
+        imagecopy($trueColor, $srcImg, 0, 0, 0, 0, $width, $height);
+        imagejpeg($trueColor, $targetJpg, 92);
+        imagedestroy($srcImg);
+        imagedestroy($trueColor);
+    } else {
+        @move_uploaded_file($file['tmp_name'], $targetJpg);
     }
+} else {
+    @move_uploaded_file($file['tmp_name'], $targetJpg);
 }
 
-if (!is_file($targetDir . DIRECTORY_SEPARATOR . 'picture.jpg') && is_file($targetDir . DIRECTORY_SEPARATOR . 'picture.png')) {
-    $tmpImage = imagecreatefrompng($targetDir . DIRECTORY_SEPARATOR . 'picture.png');
-    if ($tmpImage !== false) {
-        imagejpeg($tmpImage, $targetDir . DIRECTORY_SEPARATOR . 'picture.jpg', 92);
-        imagedestroy($tmpImage);
+// Clean up alternate format files if present
+foreach (['picture.png', 'picture.webp', 'picture.jpeg'] as $alt) {
+    $altPath = $targetDir . DIRECTORY_SEPARATOR . $alt;
+    if (is_file($altPath)) {
+        @unlink($altPath);
     }
 }
 

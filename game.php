@@ -22,6 +22,13 @@ $targetUrl = str_replace('\\', '/', substr($targetPath, strlen(__DIR__) + 1));
         <div id="ar-stage" class="ar-stage">
             <div id="ar-container" class="ar-container"></div>
             <div id="warning-banner" class="warning-banner hidden">Target file is missing. Please compile the target before starting the game.</div>
+            <div id="compatibility-panel" class="compatibility-panel hidden">
+                <div class="compatibility-box">
+                    <h2>Camera access is blocked</h2>
+                    <p id="compatibility-message">Open this game using HTTPS or localhost, then allow camera access.</p>
+                    <a class="primary" href="index.php">Back to game setup</a>
+                </div>
+            </div>
             <div id="crosshair" class="crosshair" aria-label="Aiming reticle">
                 <span></span>
             </div>

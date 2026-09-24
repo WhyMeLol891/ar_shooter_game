@@ -61,17 +61,18 @@ function buildQrCode() {
     if (!qrElement) return;
 
     try {
-        const qrFactory = window.qrcode || window.QRCode; 
+        const qrFactory = window.qrcode || window.QRCode || window.qrcodeGenerator;
         if (!qrFactory) {
-            console.warn('QR library not available.');
+            qrElement.innerHTML = `<a href="${window.AR_GAME_URL}" target="_blank" rel="noopener">Open game</a>`;
             return;
         }
         const qr = qrFactory(0, 'L');
         qr.addData(window.AR_GAME_URL);
         qr.make();
-        qrElement.innerHTML = qr.createImgTag(7, 10);
+        qrElement.innerHTML = qr.createImgTag ? qr.createImgTag(7, 10) : `<img src="${qr.createDataURL ? qr.createDataURL(7, 10) : ''}" alt="Game QR code">`;
     } catch (error) {
         console.warn('QR generation failed:', error);
+        qrElement.innerHTML = `<a href="${window.AR_GAME_URL}" target="_blank" rel="noopener">Open game</a>`;
     }
 }
 

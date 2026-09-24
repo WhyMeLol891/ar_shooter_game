@@ -5,6 +5,51 @@ import { WeaponSystem } from './weapon.js';
 import { EffectSystem } from './effects.js';
 import { GameAudio } from './audio.js';
 
+const normalizeAssetUrl = (value) => {
+    if (!value) return value;
+    let sanitized = String(value).replace(/\\/g, '/').replace(/^\.?\//, '');
+    for (let i = 0; i < 2; i += 1) {
+        try {
+            const decoded = decodeURIComponent(sanitized);
+            if (decoded === sanitized) break;
+            sanitized = decoded;
+        } catch (error) {
+            break;
+        }
+    }
+    return sanitized;
+};
+
+const legacyWarnFilter = (() => {
+    const originalWarn = console.warn.bind(console);
+    console.warn = (...args) => {
+        const message = args.map((arg) => String(arg)).join(' ');
+        if (message.includes('Property .outputEncoding has been removed')) {
+            return;
+        }
+        originalWarn(...args);
+    };
+    return originalWarn;
+})();
+
+if (THREE.WebGLRenderer && !Object.getOwnPropertyDescriptor(THREE.WebGLRenderer.prototype, 'outputEncoding')) {
+    Object.defineProperty(THREE.WebGLRenderer.prototype, 'outputEncoding', {
+        configurable: true,
+        enumerable: true,
+        get() {
+            return this._outputEncoding ?? THREE.sRGBEncoding;
+        },
+        set(value) {
+            this._outputEncoding = value;
+            if (value === THREE.sRGBEncoding || value === 'sRGBEncoding') {
+                this.outputColorSpace = THREE.SRGBColorSpace;
+            } else if (value === THREE.NoColorSpace || value === 'NoColorSpace') {
+                this.outputColorSpace = THREE.NoColorSpace;
+            }
+        },
+    });
+}
+
 const scoreValue = document.getElementById('score-value');
 const waveValue = document.getElementById('wave-value');
 const hpValue = document.getElementById('hp-value');
@@ -17,6 +62,14 @@ const damageFlash = document.getElementById('damage-flash');
 const hitFlash = document.getElementById('hit-flash');
 const crosshair = document.getElementById('crosshair');
 const warningBanner = document.getElementById('warning-banner');
+const compatibilityPanel = document.getElementById('compatibility-panel');
+const compatibilityMessage = document.getElementById('compatibility-message');
+
+function showCompatibilityError(message) {
+    if (compatibilityMessage) compatibilityMessage.textContent = message;
+    if (compatibilityPanel) compatibilityPanel.classList.remove('hidden');
+    if (warningBanner) warningBanner.classList.add('hidden');
+}
 
 class GameManager {
     constructor() {
@@ -49,7 +102,7 @@ class GameManager {
         this.nextWaveTimer = 0;
         this.pendingWave = false;
         this.reloadCooldown = 0;
-        this.weaponModelUrl = 'assets/models/fps-akm.glb';
+        this.weaponModelUrl = 'assets/models/FPS pack.undefined-glb/Fps Rig AKM.glb';
         this.playerPosition = new THREE.Vector3(0, 0, 0);
         this.mobility = 0;
     }
@@ -60,13 +113,25 @@ class GameManager {
             return;
         }
 
+        if (!window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+            showCompatibilityError('Camera access requires HTTPS. Use an HTTPS LAN URL on your phone, or test on this computer with http://localhost/ar_shooter_game/game.php.');
+            return;
+        }
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+            showCompatibilityError('This browser does not provide camera access. Open the game in Chrome on Android or Safari on iPhone.');
+            return;
+        }
+
         warningBanner.textContent = 'Starting camera...';
         warningBanner.classList.remove('hidden');
 
         const configResponse = await fetch('api/models.php', { cache: 'no-store' });
         this.config = await configResponse.json();
-        const selectedWeapon = this.config.weaponUrl || 'assets/models/fps-akm.glb';
-        this.weaponModelUrl = selectedWeapon;
+        const weaponCandidates = Array.isArray(this.config.weaponCandidates) ? this.config.weaponCandidates : [];
+        const fallbackWeapon = weaponCandidates.length ? weaponCandidates[0] : 'assets/models/FPS pack.undefined-glb/Fps Rig AKM.glb';
+        const selectedWeapon = this.config.weaponUrl || fallbackWeapon;
+        this.weaponModelUrl = normalizeAssetUrl(selectedWeapon);
 
         const container = document.getElementById('ar-container');
         this.mindar = new MindARThree({
@@ -74,7 +139,7 @@ class GameManager {
             imageTargetSrc: (window.AR_TARGET_SRC || 'assets/targets/targets.mind') + '?v=' + Date.now(),
             uiLoading: 'yes',
             uiScanning: 'no',
-            uiError: 'yes',
+            uiError: 'no',
         });
         const { renderer, scene, camera, arController } = this.mindar;
         this.scene = scene;
@@ -88,6 +153,9 @@ class GameManager {
 
         renderer.setClearColor(0x000000, 0);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.05;
         renderer.autoClear = false;
 
         const ambient = new THREE.AmbientLight(0xffffff, 1.4);
@@ -113,8 +181,7 @@ class GameManager {
             await this.mindar.start();
         } catch (error) {
             console.error('MindAR could not start:', error);
-            warningBanner.textContent = 'Camera or target startup failed. Allow camera access and use HTTPS or localhost.';
-            warningBanner.classList.remove('hidden');
+            showCompatibilityError('Camera startup failed. Allow camera access and open the game over HTTPS or localhost.');
             return;
         }
         const cameraVideo = document.querySelector('#ar-container video');
@@ -238,6 +305,9 @@ class GameManager {
         this.renderer.clear();
         this.renderer.render(this.scene, this.camera);
         this.renderer.clearDepth();
+        if (this.weapon) {
+            this.weapon.render(this.renderer);
+        }
         this.updateHud();
     }
 
@@ -308,15 +378,21 @@ class GameManager {
     }
 
     resolveEnemyModelUrl() {
-        if (!this.config) return 'assets/models/error.glb';
+        if (!this.config) return 'assets/models/ghost-skull.glb';
+        if (this.config.enemyUrl) {
+            return normalizeAssetUrl(this.config.enemyUrl);
+        }
         const enemyCandidates = Array.isArray(this.config.enemyCandidates) ? this.config.enemyCandidates : [];
         if (!enemyCandidates.length) {
-            return 'assets/models/default-enemy.glb';
+            return normalizeAssetUrl('assets/models/ghost-skull.glb');
         }
 
-        const preferred = this.config.enemy === 'random' ? enemyCandidates[Math.floor(Math.random() * enemyCandidates.length)] : this.config.enemy;
+        const mode = this.config.enemy ?? 'random';
+        const preferred = mode === 'all' || mode === 'random'
+            ? enemyCandidates[Math.floor(Math.random() * enemyCandidates.length)]
+            : mode;
         const selected = enemyCandidates.includes(preferred) ? preferred : enemyCandidates[0];
-        return 'assets/models/' + selected;
+        return normalizeAssetUrl('assets/models/' + selected);
     }
 
     updateEnemyMovement(dt) {
