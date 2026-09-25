@@ -67,14 +67,20 @@ $targetImageUrl = target_image_url();
             </div>
 
             <div class="hero-card panel">
-                <div class="qr-box">
-                    <div id="game-qr"></div>
-                </div>
-                <p class="qr-help">Scan this code with your phone to open the AR game.</p>
-                <div class="url-label">Game URL</div>
-                <div id="game-url" class="game-url" aria-live="polite"><?= htmlspecialchars($gameUrl, ENT_QUOTES, 'UTF-8') ?></div>
-                <div class="status-pill <?= $compiledExists ? 'success' : 'warning' ?>"><?= htmlspecialchars($statusText, ENT_QUOTES, 'UTF-8') ?></div>
-            </div>
+    <h3>Scan to Play</h3>
+
+    <div class="qr-container" style="display: flex; justify-content: center; align-items: center; margin: 1rem 0;">
+        <img 
+            id="qr-code-img" 
+            src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https%3A%2F%2Fderricklim.kolejsynergy.com%2Far_shooter_game%2Fgame.php" 
+            alt="Game QR Code" 
+            style="width: 200px; height: 200px; border-radius: 8px; background-color: #ffffff; padding: 10px;" 
+        />
+    </div>
+
+    <p>Scan this code with your phone to open the AR game.</p>
+    <div class="status-pill success"><?= htmlspecialchars($statusText, ENT_QUOTES, 'UTF-8') ?></div>
+</div>
         </section>
 
         <section class="content-grid shell">
@@ -143,8 +149,17 @@ $targetImageUrl = target_image_url();
     <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.5.4/qrcode.min.js"></script>
     <script type="module" src="https://unpkg.com/@google/model-viewer@4.0.0/dist/model-viewer.min.js"></script>
     <script type="module" src="assets/js/main.js"></script>
+    
     <script>
+        // Use PHP's computed base URL dynamically
         window.AR_GAME_URL = <?= json_encode($gameUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+
+        // Generate the QR Code URL using the dynamic PHP game URL
+        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(window.AR_GAME_URL)}`;
+
+        // Inject into the img tag
+        document.getElementById('qr-code-img').src = qrCodeUrl;
     </script>
 </body>
 </html>
+
