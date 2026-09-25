@@ -163,7 +163,7 @@ export class WeaponSystem {
 
     // Rotate gun to point forward into the screen (-Z direction)
     // Adjust Math.PI * 1.75 if your 3D model faces backward/sideways by default
-    this.model.rotation.set(0, Math.PI * 1.50, 0);
+    this.model.rotation.set(0, Math.PI / 2, 0);
 
     const center = new THREE.Vector3();
     box.getCenter(center);
