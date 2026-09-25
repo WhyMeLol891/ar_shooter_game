@@ -1,4 +1,7 @@
-export class EffectSystem {
+import * as THREE from 'three';
+
+export class EffectSystem {     
+    
     constructor(scene) {
         this.scene = scene;
         this.effects = [];
